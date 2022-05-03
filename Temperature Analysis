@@ -1,0 +1,158 @@
+---
+output: 
+  github_document:
+    df_print: tibble
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# neon4cast
+
+<!-- badges: start -->
+  [![R-CMD-check](https://github.com/eco4cast/neon4cast/workflows/R-CMD-check/badge.svg)](https://github.com/eco4cast/neon4cast/actions)
+<!-- badges: end -->
+
+`neon4cast` provides a collection of convenient helper utilities for anyone entering the EFI NEON Forecasting Challenge.  
+
+## Installation
+
+You can install the development version from [GitHub](https://github.com/) with:
+
+``` {r}
+install.packages("remotes")
+remotes::install_github("eco4cast/neon4cast")
+remotes::install_github("LKremer/ggpointdensity")
+install.packages("xts")
+install.packages(c("tidyverse", "fable", "tsibble"))
+install.packages("cronR")
+install.packages("ggplot2")
+install.packages("lubridate")
+install.packages(c("TTR", "fpp2"))
+install.packages("forecast")
+require(graphics)
+install.packages("scales")
+```
+
+
+## Examples
+
+```{r message=FALSE}
+library(neon4cast)
+library(tidyverse)
+library(fable)
+library(tsibble)
+library(ggplot2)
+library(ggpointdensity)
+library(TTR)
+library(fpp2)
+library(forecast)
+library(xts)
+library(lubridate)
+library(scales)
+library(zoo)
+```
+
+Download and read in the current target file for the Aquatics theme.  For convenience, we read this in as 
+a timeseries object, noting that the time is in the 'time' column, and timeseries are replicated over sites.
+
+```{r, message=FALSE}
+aquatic <- read_csv("https://data.ecoforecast.org/targets/aquatics/aquatics-targets.csv.gz") 
+aquatic_tsbl <- aquatic %>% as_tsibble(index=time, key=c(siteID, depth_temperature, depth_oxygen))
+head(aquatic_tsbl)
+```
+
+
+```{r}
+temp <- aquatic %>% select(time, temperature) %>% drop_na() %>% 
+  slice(which(row_number() %% 2 == 1)) %>% filter(time > as.Date("2022-03-01"))
+temp_tsbl <- aquatic_tsbl %>% select(time, temperature) %>% drop_na() %>% 
+  slice(which(row_number() %% 2 == 1)) %>% filter(time > as.Date("2022-03-01"))
+
+ggplot(temp_tsbl) +
+  geom_line(aes(temp_tsbl$time, temp_tsbl$temperature))
+
+
+
+aquaticna <- na.locf(aquatic)
+aquaticna$time <- as.Date(aquaticna$time, "%Y/%M/%D")
+temp_components <- ts(aquaticna$temperature, frequency = 365)
+temp_components <- decompose(temp_components)
+plot(temp_components)
+axis(1, aquaticna$time, format(aquaticna$time, "%M/%Y"))
+```
+
+```{r}
+temp_tsbl1 <- filter(temp_tsbl, depth_temperature == .05)
+temp_tsbl2 <- filter(temp_tsbl, depth_temperature == .55)
+
+ggplot(temp_tsbl1) +
+  geom_boxplot(aes(depth_temperature, temperature))
+
+ggplot(temp_tsbl2) +
+  geom_boxplot(aes(depth_temperature, temperature))
+
+boxplot(temp_tsbl$temperature ~ temp_tsbl$depth_temperature,
+        col = temp_tsbl$depth_temperature, main = "Temperatures at Different Depths", xlab = "Depth", ylab = "Temperature (C)")
+```
+
+```{r}
+mape <- function(actual,pred){
+  mape <- mean(abs((actual - pred)/actual))*100
+  return (mape)
+                }
+```
+
+
+```{r message=FALSE}
+forecast$theme <- "aquatics"
+scores <- score(forecast)
+# The resulting data.frame scores each day for each site, but is also easy to summarize:
+scores %>% 
+  group_by(siteID, target) %>% 
+  summarise(mean_crps = mean(crps, na.rm=TRUE),
+            mean_logs =  mean(logs, na.rm=TRUE))
+```
+
+
+
+```{r}
+forecast_output_validator(forecast_file)
+```
+
+
+
+```{r}
+create_model_metadata(forecast_file)
+```
+
+
+
+ 
+
+```{r}
+aq_sites <- unique(aquatic$siteID)
+download_noaa(aq_sites)
+noaa_fc <- stack_noaa()
+noaa_fc
+```
+
+
+
+```{r}
+submit(forecast_file)
+```
+
+
+
+```{r include=FALSE}
+unlink(forecast_file)
+```
